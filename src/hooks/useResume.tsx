@@ -1,5 +1,5 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
-import { Resume, PersonalDetails, Experience, Education, Project } from '@/types/resume';
+import { Resume, PersonalDetails, Experience, Education, Project, Certification, Extracurricular } from '@/types/resume';
 import { v4 as uuidv4 } from 'uuid';
 
 interface ResumeContextType {
@@ -16,12 +16,21 @@ interface ResumeContextType {
     updateEducation: (id: string, education: Partial<Education>) => void;
     deleteEducation: (id: string) => void;
     updateSkills: (skills: string[]) => void;
+    updateSoftSkills: (skills: string[]) => void;
     addProject: (project: Omit<Project, 'id'>) => void;
     updateProject: (id: string, project: Partial<Project>) => void;
     deleteProject: (id: string) => void;
+    addCertification: (cert: Omit<Certification, 'id'>) => void;
+    updateCertification: (id: string, cert: Partial<Certification>) => void;
+    deleteCertification: (id: string) => void;
+    addExtracurricular: (activity: Omit<Extracurricular, 'id'>) => void;
+    updateExtracurricular: (id: string, activity: Partial<Extracurricular>) => void;
+    deleteExtracurricular: (id: string) => void;
     updateTargetJobRole: (role: string) => void;
     updateTargetJobDescription: (jd: string) => void;
+    importResumeData: (data: Partial<Resume>) => Resume;
     optimizeWithAI: () => Promise<any>;
+    analyzeFileATS: (file: File, resumeOverride?: Resume) => Promise<any>;
     saveResume: () => void;
     deleteResume: (id: string) => void;
 }
@@ -43,7 +52,10 @@ const initialResume: Resume = {
     experience: [],
     education: [],
     skills: [],
+    softSkills: [],
     projects: [],
+    certifications: [],
+    extracurricularActivities: [],
     targetJobRole: '',
     targetJobDescription: '',
     suggestions: [],
@@ -69,6 +81,39 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
         const newResume = { ...initialResume, id: uuidv4(), lastEdited: new Date().toISOString() };
         setActiveResume(newResume);
         return newResume.id;
+    };
+
+    const importResumeData = (data: Partial<Resume>) => {
+        const newId = uuidv4();
+        const newResume: Resume = {
+            ...initialResume,
+            ...data,
+            id: newId,
+            lastEdited: new Date().toISOString()
+        };
+
+        // Ensure sub-arrays have IDs if they don't
+        if (newResume.experience) {
+            newResume.experience = newResume.experience.map(exp => ({ ...exp, id: exp.id || uuidv4() }));
+        }
+        if (newResume.education) {
+            newResume.education = newResume.education.map(edu => ({ ...edu, id: edu.id || uuidv4() }));
+        }
+        if (newResume.projects) {
+            newResume.projects = newResume.projects.map(proj => ({ ...proj, id: proj.id || uuidv4() }));
+        }
+        if (newResume.certifications) {
+            newResume.certifications = newResume.certifications.map(cert => ({ ...cert, id: cert.id || uuidv4() }));
+        }
+        if (newResume.extracurricularActivities) {
+            newResume.extracurricularActivities = newResume.extracurricularActivities.map(act => ({ ...act, id: act.id || uuidv4() }));
+        }
+
+        const updatedResumes = [...resumes, newResume];
+        setResumes(updatedResumes);
+        setActiveResume(newResume);
+        saveToLocalStorage(updatedResumes);
+        return newResume;
     };
 
     const loadResume = (id: string) => {
@@ -139,6 +184,10 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
         updateActiveResume((prev) => ({ ...prev, skills }));
     };
 
+    const updateSoftSkills = (skills: string[]) => {
+        updateActiveResume((prev) => ({ ...prev, softSkills: skills }));
+    };
+
     const addProject = (project: Omit<Project, 'id'>) => {
         updateActiveResume((prev) => ({
             ...prev,
@@ -160,6 +209,48 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
         }));
     };
 
+    const addCertification = (cert: Omit<Certification, 'id'>) => {
+        updateActiveResume((prev) => ({
+            ...prev,
+            certifications: [...prev.certifications, { ...cert, id: uuidv4() }],
+        }));
+    };
+
+    const updateCertification = (id: string, cert: Partial<Certification>) => {
+        updateActiveResume((prev) => ({
+            ...prev,
+            certifications: prev.certifications.map((c) => (c.id === id ? { ...c, ...cert } : c)),
+        }));
+    };
+
+    const deleteCertification = (id: string) => {
+        updateActiveResume((prev) => ({
+            ...prev,
+            certifications: prev.certifications.filter((c) => c.id !== id),
+        }));
+    };
+
+    const addExtracurricular = (activity: Omit<Extracurricular, 'id'>) => {
+        updateActiveResume((prev) => ({
+            ...prev,
+            extracurricularActivities: [...prev.extracurricularActivities, { ...activity, id: uuidv4() }],
+        }));
+    };
+
+    const updateExtracurricular = (id: string, activity: Partial<Extracurricular>) => {
+        updateActiveResume((prev) => ({
+            ...prev,
+            extracurricularActivities: prev.extracurricularActivities.map((a) => (a.id === id ? { ...a, ...activity } : a)),
+        }));
+    };
+
+    const deleteExtracurricular = (id: string) => {
+        updateActiveResume((prev) => ({
+            ...prev,
+            extracurricularActivities: prev.extracurricularActivities.filter((a) => a.id !== id),
+        }));
+    };
+
     const updateTargetJobRole = (role: string) => {
         updateActiveResume((prev) => ({ ...prev, targetJobRole: role }));
     };
@@ -171,24 +262,82 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
     const optimizeWithAI = async () => {
         if (!activeResume) return;
 
-        const { calculateLocalATSScore } = await import('@/services/localAIEngine');
+        const { analyzeResume } = await import('@/services/aiService');
 
         try {
-            // Simulate a small delay for "processing" feel
-            await new Promise(resolve => setTimeout(resolve, 800));
-
-            const analysis = calculateLocalATSScore(activeResume, activeResume.targetJobDescription);
+            const analysis = await analyzeResume(activeResume, activeResume.targetJobDescription);
 
             updateActiveResume((prev) => ({
                 ...prev,
                 score: analysis.score,
-                detailedScores: analysis.detailedScores,
-                suggestions: analysis.suggestions
+                detailedScores: [
+                    { name: 'ATS Match', score: analysis.score, status: analysis.score > 80 ? 'excellent' : 'good' },
+                    { name: 'Formatting', score: analysis.formattingScore, status: analysis.formattingScore > 80 ? 'excellent' : 'good' }
+                ],
+                suggestions: [
+                    ...analysis.recommendations.map(r => ({ type: 'improvement' as const, text: r })),
+                    ...analysis.path90Plus.map(p => ({ type: 'improvement' as const, text: p }))
+                ]
             }));
 
             return analysis;
         } catch (error) {
-            console.error("Local optimization failed:", error);
+            console.error("AI optimization failed:", error);
+            throw error;
+        }
+    };
+
+    const analyzeFileATS = async (file: File, resumeOverride?: Resume) => {
+        const targetResume = resumeOverride || activeResume;
+
+        console.log("analyzeFileATS: Starting analysis. targetResume:", targetResume?.id);
+
+        if (!targetResume) {
+            console.error("analyzeFileATS: No resume to analyze.");
+            return;
+        }
+
+        const { analyzeResumeATS } = await import('@/services/aiService');
+
+        try {
+            console.log("analyzeFileATS: Calling analyzeResumeATS service...");
+            const analysis = await analyzeResumeATS(file);
+            console.log("analyzeFileATS: Analysis completed successfully.");
+
+            const updateFields = (prev: Resume) => ({
+                ...prev,
+                score: analysis.score,
+                detailedScores: [
+                    { name: 'ATS Match', score: analysis.score, status: (analysis.score > 80 ? 'excellent' : 'good') as "excellent" | "good" | "warning" },
+                    { name: 'Formatting', score: analysis.formattingScore, status: (analysis.formattingScore > 80 ? 'excellent' : 'good') as "excellent" | "good" | "warning" }
+                ],
+                suggestions: [
+                    ...analysis.recommendations.map(r => ({ type: 'improvement' as const, text: r })),
+                    ...analysis.matchingKeywords.map(k => ({ type: 'keyword' as const, text: `Matched: ${k}` })),
+                    ...analysis.missingKeywords.map(k => ({ type: 'keyword' as const, text: `Missing: ${k}` }))
+                ]
+            });
+
+            if (resumeOverride) {
+                // If we passed a resume object, we need to update it in the resumes array and set active
+                setActiveResume(prev => prev?.id === resumeOverride.id ? updateFields(resumeOverride) : prev);
+                setResumes(prev => prev.map(r => r.id === resumeOverride.id ? updateFields(r) : r));
+            } else {
+                updateActiveResume(updateFields);
+            }
+
+            // Save after updating
+            setTimeout(() => {
+                const updatedResumes = localStorage.getItem('resumes');
+                if (updatedResumes) {
+                    const parsed = JSON.parse(updatedResumes);
+                    saveToLocalStorage(parsed);
+                }
+            }, 500);
+
+            return analysis;
+        } catch (error) {
+            console.error("ATS analysis failed:", error);
             throw error;
         }
     };
@@ -202,8 +351,10 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
         if (updatedResume.personalDetails.fullName) score += 20;
         if (updatedResume.experience.length > 0) score += 30;
         if (updatedResume.education.length > 0) score += 20;
-        if (updatedResume.skills.length > 0) score += 20;
-        if (updatedResume.summary) score += 10;
+        if (updatedResume.skills.length > 0) score += 10;
+        if (updatedResume.softSkills.length > 0) score += 5;
+        if (updatedResume.certifications.length > 0) score += 10;
+        if (updatedResume.summary) score += 5;
         updatedResume.score = score;
 
         let updatedResumes;
@@ -242,12 +393,21 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
                 updateEducation,
                 deleteEducation,
                 updateSkills,
+                updateSoftSkills,
                 addProject,
                 updateProject,
                 deleteProject,
+                addCertification,
+                updateCertification,
+                deleteCertification,
+                addExtracurricular,
+                updateExtracurricular,
+                deleteExtracurricular,
                 updateTargetJobRole,
                 updateTargetJobDescription,
+                importResumeData,
                 optimizeWithAI,
+                analyzeFileATS,
                 saveResume,
                 deleteResume
             }}

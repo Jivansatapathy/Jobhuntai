@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import { useSearchParams, Link, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +12,9 @@ import {
   ArrowRight,
   CheckCircle2
 } from "lucide-react";
+import api from "@/services/api";
+import { useAuth } from "@/context/AuthContext";
+import { toast } from "sonner";
 
 const features = [
   "AI-powered resume optimization",
@@ -24,6 +27,9 @@ export default function Auth() {
   const [searchParams] = useSearchParams();
   const [isSignUp, setIsSignUp] = useState(searchParams.get("mode") === "signup");
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -34,11 +40,63 @@ export default function Auth() {
     setIsSignUp(searchParams.get("mode") === "signup");
   }, [searchParams]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Form submitted:", formData);
-    // Simulate successful login
-    window.location.href = "/dashboard";
+    setLoading(true);
+
+    try {
+      if (isSignUp) {
+        // Sign Up Logic
+        console.log("Attempting sign up with:", { name: formData.name, email: formData.email });
+        await api.post("/api/auth/register/", {
+          username: formData.email, // Using email as username
+          email: formData.email,
+          password: formData.password,
+          name: formData.name
+        });
+        toast.success("Account created successfully! Please sign in.");
+        setIsSignUp(false);
+      } else {
+        // Login Logic
+        console.log("Attempting login with:", { email: formData.email, password: formData.password });
+        const response = await api.post("/api/auth/login/", {
+          email: formData.email,
+          password: formData.password,
+        });
+
+        console.log("Login response success:", response.data);
+        const { access, refresh } = response.data;
+        login(access, refresh);
+        toast.success("Welcome back!");
+        navigate("/dashboard");
+      }
+    } catch (error: any) {
+      console.error(`${isSignUp ? "Sign up" : "Login"} failed:`, error);
+      let errorMsg = "An error occurred. Please try again.";
+
+      if (error.response?.data) {
+        const data = error.response.data;
+        if (data.detail) {
+          errorMsg = data.detail;
+        } else if (data.error) {
+          errorMsg = data.error;
+        } else if (typeof data === 'object') {
+          // Flatten field-specific errors (e.g., { email: ["already exists"], username: ["too short"] })
+          const fields = Object.keys(data);
+          if (fields.length > 0) {
+            const firstField = fields[0];
+            const content = data[firstField];
+            errorMsg = Array.isArray(content) ? `${firstField}: ${content[0]}` : `${firstField}: ${content}`;
+          }
+        }
+      } else if (error.message) {
+        errorMsg = error.message;
+      }
+
+      toast.error(errorMsg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -138,9 +196,18 @@ export default function Auth() {
               </div>
             )}
 
-            <Button type="submit" variant="hero" size="lg" className="w-full gap-2">
-              {isSignUp ? "Create Account" : "Sign In"}
-              <ArrowRight className="h-5 w-5" />
+            <Button type="submit" variant="hero" size="lg" className="w-full gap-2" disabled={loading}>
+              {loading ? (
+                <>
+                  <div className="h-5 w-5 animate-spin rounded-full border-b-2 border-white"></div>
+                  {isSignUp ? "Creating Account..." : "Signing In..."}
+                </>
+              ) : (
+                <>
+                  {isSignUp ? "Create Account" : "Sign In"}
+                  <ArrowRight className="h-5 w-5" />
+                </>
+              )}
             </Button>
           </form>
 

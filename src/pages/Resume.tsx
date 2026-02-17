@@ -9,24 +9,15 @@ import {
   Plus,
   Target,
   Sparkles,
-  AlertCircle,
   TrendingUp,
-  Download,
-  Eye,
+  AlertCircle,
   Edit3,
-  Trash2
+  Trash2,
+  CheckCircle2
 } from "lucide-react";
+
 import { useResume } from "@/hooks/useResume";
 import { useNavigate } from "react-router-dom";
-
-const atsFactors = [
-  { name: "Keyword Match", score: 92, status: "good" },
-  { name: "Formatting", score: 88, status: "good" },
-  { name: "Section Structure", score: 95, status: "excellent" },
-  { name: "Contact Info", score: 100, status: "excellent" },
-  { name: "Experience Depth", score: 78, status: "warning" },
-  { name: "Skills Alignment", score: 85, status: "good" },
-];
 
 const suggestions = [
   { type: "keyword", text: "Add 'TypeScript' to skills section - appears in 89% of matching job descriptions" },
@@ -34,98 +25,48 @@ const suggestions = [
   { type: "keyword", text: "Include 'CI/CD' experience - highly requested in target roles" },
 ];
 
-const resumeVersions = [
-  { name: "Software Engineer - General", score: 94, lastEdited: "2 hours ago", isActive: true },
-  { name: "Frontend Specialist", score: 89, lastEdited: "3 days ago", isActive: false },
-  { name: "Full-Stack Developer", score: 91, lastEdited: "1 week ago", isActive: false },
-];
-
 export default function Resume() {
   const [activeTab, setActiveTab] = useState<"build" | "upload">("build");
-  const [isPasteMode, setIsPasteMode] = useState(false);
-  const [pastedText, setPastedText] = useState("");
-  const { resumes, createNewResume, deleteResume, activeResume, updatePersonalDetails, updateSummary, updateSkills, addExperience, addEducation, addProject, updateTargetJobRole, updateTargetJobDescription, optimizeWithAI, saveResume } = useResume();
+  const {
+    resumes,
+    createNewResume,
+    deleteResume,
+    activeResume,
+    updateTargetJobRole,
+    updateTargetJobDescription,
+    importResumeData,
+    optimizeWithAI,
+    analyzeFileATS
+  } = useResume();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const processResumeData = (parsedData: any) => {
-    const newId = createNewResume();
-
-    updatePersonalDetails(parsedData.personalDetails);
-    updateSummary(parsedData.summary);
-    updateSkills(parsedData.skills);
-
-    if (parsedData.experience) {
-      parsedData.experience.forEach((exp: any) => addExperience(exp));
-    }
-    if (parsedData.education) {
-      parsedData.education.forEach((edu: any) => addEducation(edu));
-    }
-    if (parsedData.projects) {
-      parsedData.projects.forEach((proj: any) => addProject(proj));
-    }
-
-    saveResume();
-    return newId;
-  };
-
-  const handleCreateNew = () => {
-    const newId = createNewResume();
-    navigate(`/resume/${newId}`);
-  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const toastId = toast.loading("Parsing resume with AI...");
       try {
-        const { extractTextFromPDF, parseResumeFromText } = await import('@/services/aiService');
-        const { localParseResume } = await import('@/services/localAIEngine');
-        const text = await extractTextFromPDF(file);
+        const { parseResumeFromFile } = await import('@/services/aiService');
+        const parsedData = await parseResumeFromFile(file);
 
-        let parsedData;
+        const newResume = importResumeData(parsedData);
+
+        // Trigger external ATS analysis in background
         try {
-          parsedData = await parseResumeFromText(text);
-        } catch (aiError) {
-          console.warn("AI parsing failed, falling back to local heuristic parser:", aiError);
-          parsedData = localParseResume(text);
-          toast.info("Using local parser (results may vary)", { id: toastId });
+          await analyzeFileATS(file, newResume);
+        } catch (atsError) {
+          console.error("Initial ATS analysis failed:", atsError);
+          // Don't toast error here, as resume is already parsed
         }
 
-        const newId = processResumeData(parsedData);
-        toast.success("Resume parsed successfully!", { id: toastId });
-        navigate(`/resume/${newId}`);
+        toast.success("Resume parsed and analyzed!", { id: toastId });
+        navigate(`/resume/${newResume.id}`);
       } catch (error: any) {
         console.error("Upload failed:", error);
         toast.error("Failed to parse resume: " + error.message, { id: toastId });
-        setIsPasteMode(true); // Offer manual entry if PDF fails
       }
     }
   };
-
-  const handleManualSubmit = async () => {
-    if (!pastedText.trim()) return;
-    const toastId = toast.loading("Processing your text...");
-    try {
-      const { parseResumeFromText } = await import('@/services/aiService');
-      const { localParseResume } = await import('@/services/localAIEngine');
-
-      let parsedData;
-      try {
-        parsedData = await parseResumeFromText(pastedText);
-      } catch (e) {
-        parsedData = localParseResume(pastedText);
-      }
-
-      const newId = processResumeData(parsedData);
-      toast.success("Resume created from text!", { id: toastId });
-      navigate(`/resume/${newId}`);
-    } catch (e) {
-      toast.error("Processing failed", { id: toastId });
-    }
-  };
-
-
 
   return (
     <div className="min-h-screen bg-background">
@@ -193,63 +134,32 @@ export default function Resume() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {isPasteMode ? (
-                      <div className="space-y-4">
-                        <div className="text-left space-y-2">
-                          <label className="text-sm font-medium">Paste your resume content here:</label>
-                          <textarea
-                            className="w-full h-64 p-4 bg-secondary/30 border border-border rounded-xl text-sm font-mono focus:outline-none focus:ring-1 focus:ring-accent"
-                            value={pastedText}
-                            onChange={(e) => setPastedText(e.target.value)}
-                            placeholder="Paste your existing resume text..."
-                          />
-                        </div>
-                        <div className="flex gap-2">
-                          <Button variant="outline" className="flex-1" onClick={() => setIsPasteMode(false)}>Back to Upload</Button>
-                          <Button className="flex-1" onClick={handleManualSubmit}>Create Resume</Button>
-                        </div>
+                    <div
+                      className="p-8 border-2 border-dashed border-border rounded-xl text-center hover:border-accent/50 transition-colors cursor-pointer"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <input
+                        type="file"
+                        ref={fileInputRef}
+                        className="hidden"
+                        accept=".pdf,.docx,.doc"
+                        onChange={handleFileUpload}
+                      />
+                      <div className="inline-flex p-4 rounded-full bg-secondary mb-4">
+                        <Upload className="h-8 w-8 text-foreground" />
                       </div>
-                    ) : (
-                      <>
-                        <div
-                          className="p-8 border-2 border-dashed border-border rounded-xl text-center hover:border-accent/50 transition-colors cursor-pointer"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          <input
-                            type="file"
-                            ref={fileInputRef}
-                            className="hidden"
-                            accept=".pdf,.docx,.doc"
-                            onChange={handleFileUpload}
-                          />
-                          <div className="inline-flex p-4 rounded-full bg-secondary mb-4">
-                            <Upload className="h-8 w-8 text-foreground" />
-                          </div>
-                          <h3 className="text-lg font-semibold mb-2">Upload Your Resume</h3>
-                          <p className="text-sm text-muted-foreground mb-4">
-                            Drop your PDF or DOCX file here, and we'll analyze and optimize it.
-                          </p>
-                          <Button variant="outline" className="gap-2" onClick={(e) => {
-                            e.stopPropagation();
-                            fileInputRef.current?.click();
-                          }}>
-                            <Upload className="h-4 w-4" />
-                            Choose File
-                          </Button>
-                        </div>
-                        <div className="relative">
-                          <div className="absolute inset-0 flex items-center">
-                            <span className="w-full border-t border-border" />
-                          </div>
-                          <div className="relative flex justify-center text-xs uppercase">
-                            <span className="bg-background px-2 text-muted-foreground">Or</span>
-                          </div>
-                        </div>
-                        <Button variant="ghost" className="w-full text-xs" onClick={() => setIsPasteMode(true)}>
-                          Paste your resume text manually
-                        </Button>
-                      </>
-                    )}
+                      <h3 className="text-lg font-semibold mb-2">Upload Your Resume</h3>
+                      <p className="text-sm text-muted-foreground mb-4">
+                        Drop your PDF or DOCX file here, and we'll analyze it using multimodal AI.
+                      </p>
+                      <Button variant="outline" className="gap-2" onClick={(e) => {
+                        e.stopPropagation();
+                        fileInputRef.current?.click();
+                      }}>
+                        <Upload className="h-4 w-4" />
+                        Choose File
+                      </Button>
+                    </div>
                   </div>
                 )}
               </motion.div>
@@ -263,7 +173,7 @@ export default function Resume() {
               >
                 <h2 className="text-lg font-semibold mb-4">Your Resumes</h2>
                 <div className="space-y-3">
-                  {resumes.map((resume, index) => (
+                  {resumes.map((resume) => (
                     <div
                       key={resume.id}
                       className={`p-4 rounded-lg border transition-all cursor-pointer border-border hover:border-accent/30`}
@@ -276,7 +186,7 @@ export default function Resume() {
                           </div>
                           <div>
                             <p className="font-medium flex items-center gap-2">
-                              {resume.name}
+                              {resume.personalDetails.fullName || "Untitled Resume"}
                             </p>
                             <p className="text-xs text-muted-foreground">Edited {new Date(resume.lastEdited).toLocaleDateString()}</p>
                           </div>
@@ -381,26 +291,69 @@ export default function Resume() {
                       <p className="text-center text-xs text-muted-foreground mt-2 font-medium">ATS Match Score</p>
                     </div>
 
-                    <div className="space-y-2">
-                      <h3 className="text-xs font-bold uppercase text-muted-foreground">Optimization Suggestions</h3>
-                      {(activeResume?.suggestions && activeResume.suggestions.length > 0 ? activeResume.suggestions : suggestions).map((suggestion, index) => (
-                        <div key={index} className="p-2.5 rounded-lg bg-secondary/50 border border-border">
-                          <div className="flex items-start gap-2">
-                            {suggestion.type === "keyword" ? (
-                              <TrendingUp className="h-3.5 w-3.5 text-foreground mt-0.5 shrink-0" />
-                            ) : (
-                              <AlertCircle className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />
-                            )}
-                            <p className="text-xs text-muted-foreground leading-relaxed">{suggestion.text}</p>
+                    <div className="space-y-4">
+                      {activeResume?.suggestions && activeResume.suggestions.some(s => s.type === 'keyword' && s.text.startsWith('Matched:')) && (
+                        <div className="space-y-2">
+                          <h3 className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-2">
+                            <CheckCircle2 className="h-3 w-3 text-success" />
+                            Matched Keywords
+                          </h3>
+                          <div className="flex flex-wrap gap-1">
+                            {activeResume.suggestions
+                              .filter(s => s.type === 'keyword' && s.text.startsWith('Matched:'))
+                              .map((s, i) => (
+                                <span key={i} className="px-2 py-0.5 bg-success/10 text-success text-[10px] rounded-full border border-success/20">
+                                  {s.text.replace('Matched: ', '')}
+                                </span>
+                              ))}
                           </div>
                         </div>
-                      ))}
+                      )}
+
+                      {activeResume?.suggestions && activeResume.suggestions.some(s => s.type === 'keyword' && s.text.startsWith('Missing:')) && (
+                        <div className="space-y-2">
+                          <h3 className="text-xs font-bold uppercase text-muted-foreground flex items-center gap-2">
+                            <AlertCircle className="h-3 w-3 text-warning" />
+                            Missing Keywords
+                          </h3>
+                          <div className="flex flex-wrap gap-1">
+                            {activeResume.suggestions
+                              .filter(s => s.type === 'keyword' && s.text.startsWith('Missing:'))
+                              .map((s, i) => (
+                                <span key={i} className="px-2 py-0.5 bg-warning/10 text-warning text-[10px] rounded-full border border-warning/20">
+                                  {s.text.replace('Missing: ', '')}
+                                </span>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="space-y-2">
+                        <h3 className="text-xs font-bold uppercase text-muted-foreground">Improvement Suggestions</h3>
+                        {activeResume?.suggestions && activeResume.suggestions.filter(s => s.type === 'improvement').length > 0 ? (
+                          activeResume.suggestions
+                            .filter(s => s.type === 'improvement')
+                            .map((suggestion, index) => (
+                              <div key={index} className="p-2.5 rounded-lg bg-secondary/50 border border-border">
+                                <div className="flex items-start gap-2">
+                                  <Sparkles className="h-3.5 w-3.5 text-accent mt-0.5 shrink-0" />
+                                  <p className="text-xs text-muted-foreground leading-relaxed">{suggestion.text}</p>
+                                </div>
+                              </div>
+                            ))
+                        ) : (
+                          <div className="p-2.5 rounded-lg bg-secondary/50 border border-border">
+                            <p className="text-xs text-muted-foreground italic">No suggestions yet. Upload your resume for analysis.</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     <Button variant="outline" className="w-full text-xs gap-2" size="sm" onClick={() => optimizeWithAI()}>
                       <Sparkles className="h-3 w-3" />
                       Refresh Analysis
                     </Button>
+
                   </div>
                 )}
               </motion.div>

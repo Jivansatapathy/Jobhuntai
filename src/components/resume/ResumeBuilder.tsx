@@ -84,8 +84,8 @@ export function ResumeBuilder() {
 
                     {/* Preview Side */}
                     <ResizablePanel defaultSize={50} minSize={30}>
-                        <div className="h-full bg-secondary/30 p-8 flex justify-center overflow-auto">
-                            <div className="w-[210mm] min-h-[297mm] bg-white shadow-xl origin-top transform scale-90 sm:scale-100 transition-transform">
+                        <div className="h-full bg-secondary/30 p-8 flex justify-center overflow-auto print:p-0 print:bg-white">
+                            <div className="w-full max-w-[210mm] shadow-xl print:shadow-none">
                                 <ResumePreview data={activeResume} />
                             </div>
                         </div>

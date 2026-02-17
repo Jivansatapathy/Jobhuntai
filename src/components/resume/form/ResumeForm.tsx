@@ -19,15 +19,24 @@ export function ResumeForm() {
         updateEducation,
         deleteEducation,
         updateSkills,
+        updateSoftSkills,
         addProject,
         updateProject,
         deleteProject,
+        addCertification,
+        updateCertification,
+        deleteCertification,
+        addExtracurricular,
+        updateExtracurricular,
+        deleteExtracurricular,
         updateTargetJobRole,
         updateTargetJobDescription,
-        optimizeWithAI
+        optimizeWithAI,
+        analyzeFileATS
     } = useResume();
 
     const [newSkill, setNewSkill] = useState("");
+    const [newSoftSkill, setNewSoftSkill] = useState("");
     const [isOptimizing, setIsOptimizing] = useState(false);
 
     if (!activeResume) return null;
@@ -36,10 +45,8 @@ export function ResumeForm() {
         setIsOptimizing(true);
         try {
             await optimizeWithAI();
-            // Toast is likely handled where optimizeWithAI is called or inside it
-            // but for better UX we might want a toast here
         } catch (error) {
-            // Error handling
+            console.error("Optimization failed:", error);
         } finally {
             setIsOptimizing(false);
         }
@@ -59,16 +66,19 @@ export function ResumeForm() {
         }
     };
 
-    const removeSkill = (skillToRemove: string) => {
-        updateSkills(activeResume.skills.filter(skill => skill !== skillToRemove));
+    const handleAddSoftSkill = () => {
+        if (newSoftSkill.trim()) {
+            updateSoftSkills([...activeResume.softSkills, newSoftSkill.trim()]);
+            setNewSoftSkill("");
+        }
     };
 
     return (
         <div className="space-y-6 pb-20">
             <div className="flex items-center justify-between">
                 <div className="space-y-1">
-                    <h2 className="text-xl font-semibold">Resume Editor</h2>
-                    <p className="text-sm text-muted-foreground">Fill in your details to build your resume.</p>
+                    <h2 className="text-xl font-semibold">Resume Editor Pro</h2>
+                    <p className="text-sm text-muted-foreground">Upgraded with Hybrid AI Intelligence.</p>
                 </div>
                 <Button
                     onClick={handleOptimize}
@@ -180,11 +190,11 @@ export function ResumeForm() {
                                 </Button>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label>Job Title</Label>
+                                        <Label>Role</Label>
                                         <Input
-                                            value={exp.jobTitle}
-                                            onChange={(e) => updateExperience(exp.id, { jobTitle: e.target.value })}
-                                            placeholder="Software Engineer"
+                                            value={exp.role}
+                                            onChange={(e) => updateExperience(exp.id, { role: e.target.value })}
+                                            placeholder="Senior Software Engineer"
                                         />
                                     </div>
                                     <div className="space-y-2">
@@ -195,29 +205,22 @@ export function ResumeForm() {
                                             placeholder="Tech Corp"
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label>Start Date</Label>
+                                    <div className="space-y-2 col-span-2">
+                                        <Label>Duration</Label>
                                         <Input
-                                            value={exp.startDate}
-                                            onChange={(e) => updateExperience(exp.id, { startDate: e.target.value })}
-                                            placeholder="MM/YYYY"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <Label>End Date</Label>
-                                        <Input
-                                            value={exp.endDate}
-                                            onChange={(e) => updateExperience(exp.id, { endDate: e.target.value })}
-                                            placeholder="MM/YYYY or Present"
+                                            value={exp.duration}
+                                            onChange={(e) => updateExperience(exp.id, { duration: e.target.value })}
+                                            placeholder="Jan 2020 - Present"
                                         />
                                     </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Description</Label>
+                                    <Label>Description (one per line)</Label>
                                     <Textarea
-                                        value={exp.description}
-                                        onChange={(e) => updateExperience(exp.id, { description: e.target.value })}
-                                        placeholder="Describe your responsibilities and achievements..."
+                                        value={exp.description.join('\n')}
+                                        onChange={(e) => updateExperience(exp.id, { description: e.target.value.split('\n') })}
+                                        placeholder="Led a team of 5 developers...&#10;Optimized database performance by 40%..."
+                                        className="h-32"
                                     />
                                 </div>
                             </div>
@@ -226,13 +229,10 @@ export function ResumeForm() {
                             variant="outline"
                             className="w-full gap-2"
                             onClick={() => addExperience({
-                                jobTitle: "",
+                                role: "",
                                 company: "",
-                                location: "",
-                                startDate: "",
-                                endDate: "",
-                                current: false,
-                                description: ""
+                                duration: "",
+                                description: []
                             })}
                         >
                             <Plus className="h-4 w-4" /> Add Experience
@@ -256,14 +256,6 @@ export function ResumeForm() {
                                 </Button>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
-                                        <Label>Degree</Label>
-                                        <Input
-                                            value={edu.degree}
-                                            onChange={(e) => updateEducation(edu.id, { degree: e.target.value })}
-                                            placeholder="Bachelor of Science"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
                                         <Label>School</Label>
                                         <Input
                                             value={edu.school}
@@ -272,19 +264,19 @@ export function ResumeForm() {
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label>Start Date</Label>
+                                        <Label>Degree</Label>
                                         <Input
-                                            value={edu.startDate}
-                                            onChange={(e) => updateEducation(edu.id, { startDate: e.target.value })}
-                                            placeholder="YYYY"
+                                            value={edu.degree}
+                                            onChange={(e) => updateEducation(edu.id, { degree: e.target.value })}
+                                            placeholder="B.S. in Computer Science"
                                         />
                                     </div>
-                                    <div className="space-y-2">
-                                        <Label>End Date</Label>
+                                    <div className="space-y-2 col-span-2">
+                                        <Label>Year</Label>
                                         <Input
-                                            value={edu.endDate}
-                                            onChange={(e) => updateEducation(edu.id, { endDate: e.target.value })}
-                                            placeholder="YYYY"
+                                            value={edu.year}
+                                            onChange={(e) => updateEducation(edu.id, { year: e.target.value })}
+                                            placeholder="2020"
                                         />
                                     </div>
                                 </div>
@@ -294,12 +286,9 @@ export function ResumeForm() {
                             variant="outline"
                             className="w-full gap-2"
                             onClick={() => addEducation({
-                                degree: "",
                                 school: "",
-                                location: "",
-                                startDate: "",
-                                endDate: "",
-                                current: false
+                                degree: "",
+                                year: ""
                             })}
                         >
                             <Plus className="h-4 w-4" /> Add Education
@@ -309,7 +298,7 @@ export function ResumeForm() {
 
                 {/* Skills */}
                 <AccordionItem value="skills">
-                    <AccordionTrigger>Skills</AccordionTrigger>
+                    <AccordionTrigger>Hard Skills</AccordionTrigger>
                     <AccordionContent>
                         <div className="space-y-4">
                             <div className="flex gap-2">
@@ -317,15 +306,43 @@ export function ResumeForm() {
                                     value={newSkill}
                                     onChange={(e) => setNewSkill(e.target.value)}
                                     onKeyDown={(e) => e.key === "Enter" && handleAddSkill()}
-                                    placeholder="Add a skill (e.g. React.js)"
+                                    placeholder="Add a hard skill (e.g. React.js, Python)"
                                 />
                                 <Button onClick={handleAddSkill}>Add</Button>
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {activeResume.skills.map((skill, index) => (
-                                    <div key={index} className="bg-secondary text-secondary-foreground px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                    <div key={index} className="bg-primary/10 text-primary px-3 py-1 rounded-full text-sm flex items-center gap-2">
                                         {skill}
-                                        <button onClick={() => removeSkill(skill)} className="hover:text-destructive">
+                                        <button onClick={() => updateSkills(activeResume.skills.filter(s => s !== skill))} className="hover:text-destructive">
+                                            &times;
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </AccordionContent>
+                </AccordionItem>
+
+                {/* Soft Skills */}
+                <AccordionItem value="softSkills">
+                    <AccordionTrigger>Soft Skills</AccordionTrigger>
+                    <AccordionContent>
+                        <div className="space-y-4">
+                            <div className="flex gap-2">
+                                <Input
+                                    value={newSoftSkill}
+                                    onChange={(e) => setNewSoftSkill(e.target.value)}
+                                    onKeyDown={(e) => e.key === "Enter" && handleAddSoftSkill()}
+                                    placeholder="Add a soft skill (e.g. Leadership, Communication)"
+                                />
+                                <Button onClick={handleAddSoftSkill}>Add</Button>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {activeResume.softSkills.map((skill, index) => (
+                                    <div key={index} className="bg-accent/10 text-accent px-3 py-1 rounded-full text-sm flex items-center gap-2">
+                                        {skill}
+                                        <button onClick={() => updateSoftSkills(activeResume.softSkills.filter(s => s !== skill))} className="hover:text-destructive">
                                             &times;
                                         </button>
                                     </div>
@@ -349,28 +366,30 @@ export function ResumeForm() {
                                 >
                                     <Trash2 className="h-4 w-4" />
                                 </Button>
-                                <div className="space-y-2">
-                                    <Label>Project Name</Label>
-                                    <Input
-                                        value={proj.name}
-                                        onChange={(e) => updateProject(proj.id, { name: e.target.value })}
-                                        placeholder="Project Name"
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Project Title</Label>
+                                        <Input
+                                            value={proj.title}
+                                            onChange={(e) => updateProject(proj.id, { title: e.target.value })}
+                                            placeholder="AI Resume Builder"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>URL (Optional)</Label>
+                                        <Input
+                                            value={proj.link || ""}
+                                            onChange={(e) => updateProject(proj.id, { link: e.target.value })}
+                                            placeholder="https://github.com/..."
+                                        />
+                                    </div>
                                 </div>
                                 <div className="space-y-2">
-                                    <Label>Description</Label>
+                                    <Label>Description (one per line)</Label>
                                     <Textarea
-                                        value={proj.description}
-                                        onChange={(e) => updateProject(proj.id, { description: e.target.value })}
-                                        placeholder="Describe the project..."
-                                    />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>URL (Optional)</Label>
-                                    <Input
-                                        value={proj.url || ""}
-                                        onChange={(e) => updateProject(proj.id, { url: e.target.value })}
-                                        placeholder="https://..."
+                                        value={proj.description.join('\n')}
+                                        onChange={(e) => updateProject(proj.id, { description: e.target.value.split('\n') })}
+                                        placeholder="Built with React and Gemini 3...&#10;Features automated ATS analysis..."
                                     />
                                 </div>
                             </div>
@@ -379,15 +398,137 @@ export function ResumeForm() {
                             variant="outline"
                             className="w-full gap-2"
                             onClick={() => addProject({
-                                name: "",
-                                description: "",
-                                url: ""
+                                title: "",
+                                link: "",
+                                description: []
                             })}
                         >
                             <Plus className="h-4 w-4" /> Add Project
                         </Button>
                     </AccordionContent>
                 </AccordionItem>
+
+                {/* Certifications */}
+                <AccordionItem value="certifications">
+                    <AccordionTrigger>Certifications</AccordionTrigger>
+                    <AccordionContent className="space-y-4">
+                        {activeResume.certifications.map((cert) => (
+                            <div key={cert.id} className="p-4 border rounded-lg space-y-4 relative group">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="absolute top-2 right-2 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => deleteCertification(cert.id)}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Certification Name</Label>
+                                        <Input
+                                            value={cert.name}
+                                            onChange={(e) => updateCertification(cert.id, { name: e.target.value })}
+                                            placeholder="AWS Certified Solutions Architect"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Issuer</Label>
+                                        <Input
+                                            value={cert.issuer}
+                                            onChange={(e) => updateCertification(cert.id, { issuer: e.target.value })}
+                                            placeholder="Amazon Web Services"
+                                        />
+                                    </div>
+                                    <div className="space-y-2 col-span-2">
+                                        <Label>Year</Label>
+                                        <Input
+                                            value={cert.year}
+                                            onChange={(e) => updateCertification(cert.id, { year: e.target.value })}
+                                            placeholder="2023"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                        <Button
+                            variant="outline"
+                            className="w-full gap-2"
+                            onClick={() => addCertification({
+                                name: "",
+                                issuer: "",
+                                year: ""
+                            })}
+                        >
+                            <Plus className="h-4 w-4" /> Add Certification
+                        </Button>
+                    </AccordionContent>
+                </AccordionItem>
+
+                {/* Extracurriculars */}
+                <AccordionItem value="extracurriculars">
+                    <AccordionTrigger>Extracurricular Activities</AccordionTrigger>
+                    <AccordionContent className="space-y-4">
+                        {activeResume.extracurricularActivities.map((act) => (
+                            <div key={act.id} className="p-4 border rounded-lg space-y-4 relative group">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="absolute top-2 right-2 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={() => deleteExtracurricular(act.id)}
+                                >
+                                    <Trash2 className="h-4 w-4" />
+                                </Button>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                        <Label>Role</Label>
+                                        <Input
+                                            value={act.role}
+                                            onChange={(e) => updateExtracurricular(act.id, { role: e.target.value })}
+                                            placeholder="Volunteer Mentor"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <Label>Organization</Label>
+                                        <Input
+                                            value={act.organization}
+                                            onChange={(e) => updateExtracurricular(act.id, { organization: e.target.value })}
+                                            placeholder="Code for Good"
+                                        />
+                                    </div>
+                                    <div className="space-y-2 col-span-2">
+                                        <Label>Duration</Label>
+                                        <Input
+                                            value={act.duration}
+                                            onChange={(e) => updateExtracurricular(act.id, { duration: e.target.value })}
+                                            placeholder="2021 - Present"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Description (one per line)</Label>
+                                    <Textarea
+                                        value={act.description.join('\n')}
+                                        onChange={(e) => updateExtracurricular(act.id, { description: e.target.value.split('\n') })}
+                                        placeholder="Mentored 10+ students in web development..."
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                        <Button
+                            variant="outline"
+                            className="w-full gap-2"
+                            onClick={() => addExtracurricular({
+                                role: "",
+                                organization: "",
+                                duration: "",
+                                description: []
+                            })}
+                        >
+                            <Plus className="h-4 w-4" /> Add Activity
+                        </Button>
+                    </AccordionContent>
+                </AccordionItem>
+
                 {/* Target Job Description */}
                 <AccordionItem value="jobDescription">
                     <AccordionTrigger>Target Job Profile</AccordionTrigger>

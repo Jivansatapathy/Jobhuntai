@@ -1,157 +1,236 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import * as pdfjs from 'pdfjs-dist';
-// @ts-ignore - pdf.worker.mjs?url is a Vite-specific feature
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
-
-// Configure PDF.js worker using Vite's asset handling
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+import { GoogleGenAI, Type } from "@google/genai";
+import { Resume, ATSAnalysis } from "../types/resume";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(API_KEY || "");
 
-export const extractTextFromPDF = async (file: File): Promise<string> => {
+if (!API_KEY || API_KEY === "your_api_key_here" || API_KEY.length < 10) {
+    console.error("Gemini API key is missing or invalid. Please check your .env file.");
+}
+
+const ai = new GoogleGenAI({ apiKey: API_KEY || "" });
+
+const RESUME_SCHEMA = {
+    type: Type.OBJECT,
+    properties: {
+        personalDetails: {
+            type: Type.OBJECT,
+            properties: {
+                fullName: { type: Type.STRING, description: "Full name of the individual" },
+                email: { type: Type.STRING, description: "Contact email address" },
+                phone: { type: Type.STRING, description: "Contact phone number" },
+                location: { type: Type.STRING, description: "Current city and state/country" },
+                linkedinUrl: { type: Type.STRING },
+                portfolioUrl: { type: Type.STRING },
+            },
+        },
+        summary: { type: Type.STRING, description: "A brief professional summary or objective statement only. DO NOT include experience or skills here." },
+        skills: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of technical, hard, or tool-specific skills" },
+        softSkills: { type: Type.ARRAY, items: { type: Type.STRING }, description: "List of interpersonal, soft, or character-based skills" },
+        experience: {
+            type: Type.ARRAY,
+            description: "Detailed work history",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    company: { type: Type.STRING },
+                    role: { type: Type.STRING },
+                    duration: { type: Type.STRING, description: "Dates of employment (e.g., Jan 2020 - Present)" },
+                    description: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Bullet points of achievements and responsibilities" },
+                },
+            },
+        },
+        education: {
+            type: Type.ARRAY,
+            description: "Academic history",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    school: { type: Type.STRING },
+                    degree: { type: Type.STRING },
+                    year: { type: Type.STRING },
+                },
+            },
+        },
+        projects: {
+            type: Type.ARRAY,
+            description: "Specific professional or personal projects",
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    title: { type: Type.STRING },
+                    link: { type: Type.STRING },
+                    description: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+            },
+        },
+        certifications: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    name: { type: Type.STRING },
+                    issuer: { type: Type.STRING },
+                    year: { type: Type.STRING },
+                },
+            },
+        },
+        extracurricularActivities: {
+            type: Type.ARRAY,
+            items: {
+                type: Type.OBJECT,
+                properties: {
+                    role: { type: Type.STRING },
+                    organization: { type: Type.STRING },
+                    duration: { type: Type.STRING },
+                    description: { type: Type.ARRAY, items: { type: Type.STRING } },
+                },
+            },
+        },
+    },
+    required: ["personalDetails", "summary", "skills", "experience"],
+};
+
+import api from "@/services/api";
+
+export const analyzeResumeATS = async (file: File): Promise<ATSAnalysis> => {
+    console.log("analyzeResumeATS: Starting analysis for file:", file.name);
+    const formData = new FormData();
+    formData.append("resume", file);
+
     try {
-        console.log("Starting PDF extraction for:", file.name);
-        const arrayBuffer = await file.arrayBuffer();
-
-        // Load the PDF document
-        const loadingTask = pdfjs.getDocument({
-            data: arrayBuffer,
-            useWorkerFetch: true,
-            isEvalSupported: false
+        const response = await api.post("/api/resumes/ats/", formData, {
+            headers: {
+                "Content-Type": "multipart/form-data",
+            }
         });
 
-        const pdf = await loadingTask.promise;
-        console.log(`PDF loaded. Pages: ${pdf.numPages}`);
+        console.log("analyzeResumeATS: API response received:", response.status);
+        const data = response.data;
 
-        let text = "";
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const content = await page.getTextContent();
-            const pageText = content.items
-                .map((item: any) => item.str)
-                .join(" ");
-            text += pageText + "\n";
-        }
 
-        if (!text.trim()) {
-            throw new Error("No text content found in the PDF. It might be a scanned image or empty.");
-        }
 
-        return text;
+        // Map the external API response to our ATSAnalysis interface
+        return {
+            score: data.score,
+            formattingScore: 100, // External API doesn't provide this, defaulting
+            matchingKeywords: data.keywords_matched || [],
+            missingKeywords: data.missing_keywords || [],
+            recommendations: data.suggestions || [],
+            path90Plus: [],
+            sectionFeedback: []
+        };
     } catch (error: any) {
-        console.error("PDF Extraction Detail Error:", error);
-        // Provide more specific feedback if it's a known error type
-        if (error.name === 'PasswordException') {
-            throw new Error("This PDF is password protected and cannot be parsed.");
+        console.error("analyzeResumeATS: Error during analysis:", error);
+        if (error.response) {
+            console.error("Error response data:", error.response.data);
         }
-        if (error.name === 'InvalidPDFException') {
-            throw new Error("The file is not a valid PDF or is corrupted.");
-        }
-        throw new Error(`Failed to extract text: ${error.message || "Unknown error"}. Please ensure it's a valid PDF file.`);
+        throw error;
     }
 };
 
-export const analyzeResume = async (resumeData: any, jobDescription?: string) => {
-    if (!API_KEY || API_KEY === "your_api_key_here") {
-        throw new Error("Gemini API key is missing. Please add VITE_GEMINI_API_KEY to your .env file.");
-    }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+export const parseResumeFromFile = async (file: File): Promise<Partial<Resume>> => {
+    const base64Data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+    });
 
-    const prompt = `
-        You are an expert ATS (Applicant Tracking System) optimizer. 
-        Analyze the following resume data and optional job description.
-        
-        Resume Data:
-        ${JSON.stringify(resumeData, null, 2)}
-        
-        Target Job Description:
-        ${jobDescription || "Not provided"}
-        
-        Provide your analysis in the following JSON format ONLY. Do not include any other text:
-        {
-            "score": number (0-100),
-            "detailedScores": [
-                { "name": "Keyword Match", "score": number, "status": "excellent" | "good" | "warning" },
-                { "name": "Formatting", "score": number, "status": "excellent" | "good" | "warning" },
-                { "name": "Section Structure", "score": number, "status": "excellent" | "good" | "warning" },
-                { "name": "Skills Alignment", "score": number, "status": "excellent" | "good" | "warning" }
-            ],
-            "suggestions": [
-                { "type": "keyword" | "improvement", "text": "string" }
-            ],
-            "parsedData": {
-                "summary": "string",
-                "skills": ["string"]
-            }
-        }
-    `;
-
-    try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-
-        // Extract JSON from response (handling potential markdown blocks)
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("Failed to parse AI response: No JSON found");
-
-        return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-        console.error("AI Analysis Error:", error);
-        throw new Error("Failed to analyze resume with AI. Please check your API key and internet connection.");
-    }
-};
-
-export const parseResumeFromText = async (text: string) => {
-    if (!API_KEY || API_KEY === "your_api_key_here") {
-        throw new Error("Gemini API key is missing. Please add VITE_GEMINI_API_KEY to your .env file.");
-    }
-
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const prompt = `
-        You are a resume parser. Extract information from the following text and return it in a structured JSON format.
-        
-        Resume Text:
-        ${text}
-        
-        Return JSON in this format ONLY:
-        {
-            "personalDetails": {
-                "fullName": "string",
-                "email": "string",
-                "phone": "string",
-                "location": "string",
-                "linkedinUrl": "string",
-                "portfolioUrl": "string"
-            },
-            "summary": "string",
-            "experience": [
-                { "jobTitle": "string", "company": "string", "location": "string", "startDate": "string", "endDate": "string", "current": boolean, "description": "string" }
-            ],
-            "education": [
-                { "degree": "string", "school": "string", "location": "string", "startDate": "string", "endDate": "string", "current": boolean }
-            ],
-            "skills": ["string"],
-            "projects": [
-                { "name": "string", "description": "string", "url": "string" }
+    const response = await ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents: {
+            parts: [
+                {
+                    inlineData: {
+                        data: base64Data,
+                        mimeType: file.type,
+                    },
+                },
+                {
+                    text: `You are a high-precision Resume Parser. Your goal is to extract information from the provided document into a structured JSON format.
+          
+          STRICT RULES FOR EXTRACTION:
+          1. 'summary': Extract ONLY the brief 2-4 sentence introduction/objective. DO NOT put skills, projects, or work history in this field.
+          2. 'experience': Each job must be a separate object. Descriptions MUST be an array of short bullet points.
+          3. 'skills': This is for Hard Skills (e.g., Python, React, AWS).
+          4. 'softSkills': This is for Interpersonal Skills (e.g., Leadership, Communication).
+          5. 'projects': Separate specific projects from general work experience.
+          6. 'education': List schools, degrees, and years.
+          7. If a section is not present in the document, return an empty array or empty string.
+          8. Do not make up information. Only extract what is visible.`,
+                }
             ]
-        }
-    `;
+        },
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: RESUME_SCHEMA,
+        },
+    });
 
     try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        const resultText = response.text();
-
-        const jsonMatch = resultText.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error("Failed to parse AI response: No JSON found");
-
-        return JSON.parse(jsonMatch[0]);
+        const data = JSON.parse(response.text || '{}');
+        return data;
     } catch (error) {
-        console.error("AI Parsing Error:", error);
-        throw new Error("Failed to parse resume with AI.");
+        console.error("Failed to parse AI response:", error);
+        throw new Error("Failed to parse resume data from AI.");
     }
+};
+
+export const analyzeResume = async (resume: Resume, jobDescription?: string): Promise<ATSAnalysis> => {
+    const response = await ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents: `You are an expert ATS (Applicant Tracking System) Auditor. Analyze the provided resume against the job details. 
+    
+    Resume: ${JSON.stringify(resume)}
+    Job Description: ${jobDescription || "No job description provided."}
+    
+    CRITICAL OBJECTIVE: Provide extremely granular feedback. For every section (Experience, Skills, Projects, etc.), tell the user exactly what to change, add, or remove to hit a 90+ score.`,
+        config: {
+            responseMimeType: "application/json",
+            responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                    score: { type: Type.NUMBER, description: "Overall ATS matching score (0-100)" },
+                    formattingScore: { type: Type.NUMBER, description: "Structural/Formatting quality (0-100)" },
+                    matchingKeywords: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Keywords present in both resume and JD" },
+                    missingKeywords: { type: Type.ARRAY, items: { type: Type.STRING }, description: "CRITICAL keywords found in JD but missing in resume" },
+                    recommendations: { type: Type.ARRAY, items: { type: Type.STRING }, description: "General professional advice" },
+                    path90Plus: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Step-by-step checklist to reach 90+ score" },
+                    sectionFeedback: {
+                        type: Type.ARRAY,
+                        items: {
+                            type: Type.OBJECT,
+                            properties: {
+                                sectionName: { type: Type.STRING, description: "e.g. 'Work Experience' or 'Skills'" },
+                                issue: { type: Type.STRING, description: "What is currently wrong or missing in this section" },
+                                improvement: { type: Type.STRING, description: "Exactly what text or detail to add/change" },
+                                priority: { type: Type.STRING, enum: ["High", "Medium", "Low"] }
+                            },
+                            required: ["sectionName", "issue", "improvement", "priority"]
+                        }
+                    }
+                },
+                required: ["score", "formattingScore", "matchingKeywords", "missingKeywords", "path90Plus", "sectionFeedback"],
+            },
+        },
+    });
+
+    try {
+        return JSON.parse(response.text || '{}');
+    } catch (error) {
+        console.error("Failed to parse ATS analysis:", error);
+        throw new Error("Failed to generate ATS analysis.");
+    }
+};
+
+export const suggestSummary = async (data: Partial<Resume>): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents: `Write a compelling, 3-sentence professional summary for a resume based on these details: ${JSON.stringify(data)}`,
+    });
+    return response.text || "";
 };

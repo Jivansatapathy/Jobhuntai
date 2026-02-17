@@ -43,7 +43,7 @@
     /* Extended palette */
     --success: 142 72% 42%;
     --success-foreground: 0 0% 100%;
-    
+
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 7%;
 
@@ -170,12 +170,119 @@
   }
 
   @keyframes float {
-    0%, 100% { transform: translateY(0); }
-    50% { transform: translateY(-10px); }
+
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-10px);
+    }
   }
 
   @keyframes pulse-glow {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
+
+    0%,
+    100% {
+      opacity: 0.5;
+    }
+
+    50% {
+      opacity: 1;
+    }
+  }
+}
+
+/* Resume Pagination & Print Styles */
+@layer utilities {
+  .resume-page-container {
+    width: 210mm;
+    min-height: 297mm;
+    background: white;
+    padding: 20mm;
+    margin: 0 auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    position: relative;
+    transition: all 0.3s ease;
+  }
+
+  .resume-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 4mm;
+  }
+
+  .resume-page-indicator {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 0;
+    border-top: 2px dashed #d1d5db;
+    z-index: 10;
+    pointer-events: none;
+  }
+
+  .resume-page-indicator::after {
+    content: 'PAGE BREAK';
+    position: absolute;
+    right: 5mm;
+    top: -12px;
+    background: #f3f4f6;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #6b7280;
+    letter-spacing: 0.05em;
+  }
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 0mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  #resume-preview-content,
+  #resume-preview-content * {
+    visibility: visible;
+  }
+
+  #resume-preview-content {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+  }
+
+  /* Reset container for print */
+  .resume-page-container {
+    padding: 20mm !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    width: 100% !important;
+    max-width: none !important;
+    min-height: auto !important;
+  }
+
+  .resume-page-indicator {
+    display: none !important;
+  }
+
+  .no-print,
+  header:not(.resume-section),
+  nav:not(.resume-section),
+  button,
+  [role="button"] {
+    display: none !important;
   }
 }
