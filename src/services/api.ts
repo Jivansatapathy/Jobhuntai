@@ -1,8 +1,10 @@
 import axios from 'axios';
 
 const api = axios.create({
-    // Using relative path to support Vite proxy and bypass CORS issues in local development
-    baseURL: '/',
+    // In production, use the full Railway URL. In development, use '/' to support the Vite proxy.
+    baseURL: import.meta.env.PROD
+        ? 'https://jobai-production-7672.up.railway.app/'
+        : '/',
     headers: {
         'Content-Type': 'application/json',
     },
