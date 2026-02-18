@@ -23,18 +23,25 @@ const filters = {};
 export default function Jobs() {
   const [searchQuery, setSearchQuery] = useState("");
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [savedJobs, setSavedJobs] = useState<number[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [hasNextPage, setHasNextPage] = useState(false);
   const [sortBy, setSortBy] = useState("Best Match");
+
+  const parseDate = (dateStr: string) => {
+    const now = new Date();
+    const num = parseInt(dateStr.match(/\d+/)?.[0] || "0");
+    if (dateStr.includes("hour")) return new Date(now.getTime() - num * 60 * 60 * 1000);
+    if (dateStr.includes("day")) return new Date(now.getTime() - num * 24 * 60 * 60 * 1000);
+    if (dateStr.includes("week")) return new Date(now.getTime() - num * 7 * 24 * 60 * 60 * 1000);
+    if (dateStr.includes("month")) return new Date(now.getTime() - num * 30 * 24 * 60 * 60 * 1000);
+    return now;
+  };
 
   const sortJobs = (jobList: Job[], criteria: string) => {
     const list = [...jobList];
     switch (criteria) {
       case "Most Recent":
-        return list.sort((a, b) => b.posted.localeCompare(a.posted));
+        return list.sort((a, b) => parseDate(b.posted).getTime() - parseDate(a.posted).getTime());
       case "Highest Salary":
         const getSalaryValue = (s?: string) => {
           if (!s) return 0;
@@ -48,38 +55,76 @@ export default function Jobs() {
     }
   };
 
-  const fetchJobs = async (query: string = "", page: number = 1, append: boolean = false) => {
-    if (page === 1) setIsRefreshing(true);
-    else setIsLoading(true);
+  const fetchJobs = async (query: string = "") => {
+    setIsRefreshing(true);
+    let allJobs: Job[] = [];
+    const seenIds = new Set<number>();
+    let page = 1;
+    let hasNext = true;
 
     try {
-      const { jobs: newJobs, hasNext } = await searchJobs(query, page);
+      while (hasNext) {
+        console.log(`[JobDiscovery] Fetching page ${page}...`);
+        const { jobs: newJobs, hasNext: apiHasNext } = await searchJobs(query, page);
 
-      setJobs(prev => {
-        const combined = append ? [...prev, ...newJobs] : newJobs;
-        return sortJobs(combined, sortBy);
-      });
-      setHasNextPage(hasNext);
-      setCurrentPage(page);
+        if (newJobs.length === 0) {
+          console.log(`[JobDiscovery] Page ${page} returned no jobs. Stopping loop.`);
+          break;
+        }
+
+        // Strict local filtering
+        const filteredNewJobs = query.trim() !== ""
+          ? newJobs.filter(job =>
+            job.title.toLowerCase().includes(query.toLowerCase()) ||
+            job.company.toLowerCase().includes(query.toLowerCase()) ||
+            job.tags.some(tag => tag.toLowerCase().includes(query.toLowerCase()))
+          )
+          : newJobs;
+
+        // Deduplication & Tracking new items
+        let newUniqueCount = 0;
+        filteredNewJobs.forEach(job => {
+          if (!seenIds.has(job.id)) {
+            seenIds.add(job.id);
+            allJobs.push(job);
+            newUniqueCount++;
+          }
+        });
+
+        console.log(`[JobDiscovery] Page ${page}: ${newJobs.length} total, ${filteredNewJobs.length} filtered, ${newUniqueCount} new unique jobs.`);
+
+        // If a page returns NO new unique jobs that match our filter, we might be looping over the last available page
+        if (newUniqueCount === 0 && filteredNewJobs.length > 0) {
+          console.log(`[JobDiscovery] Page ${page} returned no new items after deduplication. Stopping loop.`);
+          break;
+        }
+
+        hasNext = apiHasNext;
+        page++;
+
+        // Safety break for extremely large or misbehaving datasets
+        if (page > 50) {
+          console.warn(`[JobDiscovery] Safety break reached at page 50.`);
+          break;
+        }
+      }
+
+      console.log(`[JobDiscovery] Fetch complete. Total unique jobs found: ${allJobs.length}`);
+      setJobs(sortJobs(allJobs, sortBy));
     } catch (error: any) {
       toast.error("Failed to fetch jobs: " + (error.response?.data?.message || error.message));
     } finally {
-      setIsLoading(false);
       setIsRefreshing(false);
     }
   };
 
   useEffect(() => {
-    fetchJobs(searchQuery, 1, false);
+    fetchJobs(searchQuery);
   }, [sortBy]);
 
   const handleSearch = (e?: React.FormEvent) => {
     e?.preventDefault();
-    fetchJobs(searchQuery, 1, false);
-  };
-
-  const handleLoadMore = () => {
-    fetchJobs(searchQuery, currentPage + 1, true);
+    fetchJobs(searchQuery);
   };
 
   const toggleSave = (jobId: number) => {
@@ -254,32 +299,14 @@ export default function Jobs() {
                     </motion.div>
                   ))}
 
-                  {/* Load More */}
-                  {hasNextPage && (
-                    <div className="text-center pt-8 pb-4">
-                      <Button
-                        variant="outline"
-                        size="lg"
-                        className="gap-2 px-8"
-                        onClick={handleLoadMore}
-                        disabled={isLoading}
-                      >
-                        {isLoading ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <TrendingUp className="h-4 w-4" />
-                        )}
-                        {isLoading ? "Fetching more jobs..." : "Load More Jobs"}
-                      </Button>
-                    </div>
-                  )}
+                  {/* No more Load More needed as we fetch all upfront */}
                 </>
               ) : (
                 <div className="text-center py-20 glass-card">
                   <Briefcase className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
                   <h3 className="text-lg font-medium mb-2">No jobs found</h3>
                   <p className="text-muted-foreground italic text-sm">Try adjusting your search to see more results.</p>
-                  <Button variant="outline" className="mt-6" onClick={() => fetchJobs("", 1, false)}>
+                  <Button variant="outline" className="mt-6" onClick={() => fetchJobs("")}>
                     Show All Jobs
                   </Button>
                 </div>

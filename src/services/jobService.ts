@@ -35,10 +35,15 @@ export const searchJobs = async (query: string = '', page: number = 1): Promise<
 
         if (Array.isArray(data)) {
             jobsArray = data;
+            // Optimistic pagination: If we got jobs in a simple array, assume there might be a next page
+            hasNext = data.length > 0;
+            console.log(`[JobDiscovery] Simple array response, count: ${jobsArray.length}, set hasNext to ${hasNext}`);
         } else if (data && typeof data === 'object') {
             jobsArray = data.jobs || data.results || data.data || [];
             // Check for next page indicator (can be a boolean, a URL string, or presence of 'next' field)
             hasNext = !!(data.next || data.has_next || data.next_page || (data.count && jobsArray.length < data.count));
+            // If the wrapper doesn't have metadata but has jobs, assume there might be more
+            if (!hasNext && jobsArray.length > 0) hasNext = true;
             console.log(`[JobDiscovery] Extracted array from object, count: ${jobsArray.length}, hasNext: ${hasNext}`);
         }
 
