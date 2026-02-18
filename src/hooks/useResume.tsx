@@ -1,6 +1,7 @@
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { Resume, PersonalDetails, Experience, Education, Project, Certification, Extracurricular } from '@/types/resume';
 import { v4 as uuidv4 } from 'uuid';
+import { toast } from 'sonner';
 
 interface ResumeContextType {
     resumes: Resume[];
@@ -129,6 +130,23 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
             return updater(prev);
         });
     };
+
+    // Performance Optimized Persistence: Sync activeResume changes to the resumes list and localStorage
+    useEffect(() => {
+        if (!activeResume) return;
+
+        setResumes(currentResumes => {
+            const newList = currentResumes.map(r => r.id === activeResume.id ? activeResume : r);
+
+            // Only write to localStorage if something actually changed to avoid loop
+            const oldList = JSON.parse(localStorage.getItem('resumes') || '[]');
+            if (JSON.stringify(newList) !== JSON.stringify(oldList)) {
+                saveToLocalStorage(newList);
+            }
+
+            return newList;
+        });
+    }, [activeResume]);
 
     const updatePersonalDetails = (details: PersonalDetails) => {
         updateActiveResume((prev) => ({ ...prev, personalDetails: details }));
@@ -271,8 +289,8 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
                 ...prev,
                 score: analysis.score,
                 detailedScores: [
-                    { name: 'ATS Match', score: analysis.score, status: analysis.score > 80 ? 'excellent' : 'good' },
-                    { name: 'Formatting', score: analysis.formattingScore, status: analysis.formattingScore > 80 ? 'excellent' : 'good' }
+                    { name: 'ATS Match', score: analysis.score, status: (analysis.score > 80 ? 'excellent' : 'good') as "excellent" | "good" | "warning" },
+                    { name: 'Formatting', score: analysis.formattingScore, status: (analysis.formattingScore > 80 ? 'excellent' : 'good') as "excellent" | "good" | "warning" }
                 ],
                 suggestions: [
                     ...analysis.recommendations.map(r => ({ type: 'improvement' as const, text: r })),
@@ -301,7 +319,11 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
 
         try {
             console.log("analyzeFileATS: Calling analyzeResumeATS service...");
-            const analysis = await analyzeResumeATS(file);
+            const analysis = await analyzeResumeATS(
+                file,
+                targetResume.targetJobRole || "",
+                targetResume.targetJobDescription || ""
+            );
             console.log("analyzeFileATS: Analysis completed successfully.");
 
             const updateFields = (prev: Resume) => ({
@@ -345,17 +367,6 @@ export function ResumeProvider({ children }: { children: ReactNode }) {
     const saveResume = () => {
         if (!activeResume) return;
         const updatedResume = { ...activeResume, lastEdited: new Date().toISOString() };
-
-        // Simple mock score calculation
-        let score = 0;
-        if (updatedResume.personalDetails.fullName) score += 20;
-        if (updatedResume.experience.length > 0) score += 30;
-        if (updatedResume.education.length > 0) score += 20;
-        if (updatedResume.skills.length > 0) score += 10;
-        if (updatedResume.softSkills.length > 0) score += 5;
-        if (updatedResume.certifications.length > 0) score += 10;
-        if (updatedResume.summary) score += 5;
-        updatedResume.score = score;
 
         let updatedResumes;
         if (resumes.some((r) => r.id === updatedResume.id)) {

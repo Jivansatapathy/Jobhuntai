@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/layout/Navbar";
@@ -18,6 +18,13 @@ import {
 
 import { useResume } from "@/hooks/useResume";
 import { useNavigate } from "react-router-dom";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 const suggestions = [
   { type: "keyword", text: "Add 'TypeScript' to skills section - appears in 89% of matching job descriptions" },
@@ -27,11 +34,14 @@ const suggestions = [
 
 export default function Resume() {
   const [activeTab, setActiveTab] = useState<"build" | "upload">("build");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAnalysisVisible, setIsAnalysisVisible] = useState(false);
   const {
     resumes,
     createNewResume,
     deleteResume,
     activeResume,
+    loadResume,
     updateTargetJobRole,
     updateTargetJobDescription,
     importResumeData,
@@ -40,10 +50,19 @@ export default function Resume() {
   } = useResume();
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastUploadedFileRef = useRef<File | null>(null);
+
+  // Auto-select first resume if none active to enable ATS sidebar
+  useEffect(() => {
+    if (!activeResume && resumes.length > 0) {
+      loadResume(resumes[0].id);
+    }
+  }, [activeResume, resumes, loadResume]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      lastUploadedFileRef.current = file;
       const toastId = toast.loading("Parsing resume with AI...");
       try {
         const { parseResumeFromFile } = await import('@/services/aiService');
@@ -51,15 +70,7 @@ export default function Resume() {
 
         const newResume = importResumeData(parsedData);
 
-        // Trigger external ATS analysis in background
-        try {
-          await analyzeFileATS(file, newResume);
-        } catch (atsError) {
-          console.error("Initial ATS analysis failed:", atsError);
-          // Don't toast error here, as resume is already parsed
-        }
-
-        toast.success("Resume parsed and analyzed!", { id: toastId });
+        toast.success("Resume parsed! Add job details to analyze match.", { id: toastId });
         navigate(`/resume/${newResume.id}`);
       } catch (error: any) {
         console.error("Upload failed:", error);
@@ -231,10 +242,36 @@ export default function Resume() {
                   <Target className="h-5 w-5 text-accent" />
                 </div>
 
-                {!activeResume?.targetJobRole || !activeResume?.targetJobDescription ? (
+                <div className="space-y-4 mb-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase font-bold text-muted-foreground flex items-center gap-1">
+                      <FileText className="h-3 w-3" /> Select Your Resume
+                    </label>
+                    <Select
+                      value={activeResume?.id || ""}
+                      onValueChange={(id) => {
+                        loadResume(id);
+                        setIsAnalysisVisible(false);
+                      }}
+                    >
+                      <SelectTrigger className="w-full bg-background/50 border-border h-9">
+                        <SelectValue placeholder="Choose a resume..." />
+                      </SelectTrigger>
+                      <SelectContent className="glass-card border-border">
+                        {resumes.map((resume) => (
+                          <SelectItem key={resume.id} value={resume.id} className="text-sm">
+                            {resume.personalDetails.fullName || `Untitled Resume (${resume.id.slice(0, 4)})`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {!isAnalysisVisible ? (
                   <div className="space-y-4">
                     <div className="p-3 bg-secondary/50 rounded-lg border border-border">
-                      <p className="text-xs text-muted-foreground mb-3">Set your target role to see your ATS score and get tailored suggestions.</p>
+                      <p className="text-xs text-muted-foreground mb-3">Set your target role and job description to analyze your ATS match.</p>
                       <div className="space-y-3">
                         <div className="space-y-1">
                           <label className="text-[10px] uppercase font-bold text-muted-foreground">Target Job Role</label>
@@ -242,25 +279,57 @@ export default function Resume() {
                             className="w-full bg-background border border-border rounded px-2 py-1.5 text-sm"
                             placeholder="e.g. Senior Frontend Engineer"
                             value={activeResume?.targetJobRole || ""}
-                            onChange={(e) => updateTargetJobRole(e.target.value)}
+                            onChange={(e) => {
+                              updateTargetJobRole(e.target.value);
+                            }}
                           />
                         </div>
                         <div className="space-y-1">
                           <label className="text-[10px] uppercase font-bold text-muted-foreground">Job Description</label>
                           <textarea
-                            className="w-full bg-background border border-border rounded px-2 py-1.5 text-sm h-24"
+                            className="w-full bg-background border border-border rounded px-2 py-1.5 text-sm h-32"
                             placeholder="Paste the job description here..."
                             value={activeResume?.targetJobDescription || ""}
-                            onChange={(e) => updateTargetJobDescription(e.target.value)}
+                            onChange={(e) => {
+                              updateTargetJobDescription(e.target.value);
+                            }}
                           />
                         </div>
                         <Button
-                          className="w-full text-xs h-8"
+                          className="w-full text-xs h-8 text-white bg-gradient-to-r from-accent to-accent/80 hover:from-accent/90 hover:to-accent"
                           variant="hero"
-                          disabled={!activeResume?.targetJobRole || !activeResume?.targetJobDescription}
-                          onClick={() => optimizeWithAI()}
+                          disabled={!activeResume?.targetJobRole || !activeResume?.targetJobDescription || isAnalyzing}
+                          onClick={async () => {
+                            if (!activeResume) return;
+
+                            setIsAnalyzing(true);
+                            const toastId = toast.loading("Analyzing ATS match...");
+
+                            try {
+                              if (lastUploadedFileRef.current) {
+                                await analyzeFileATS(lastUploadedFileRef.current);
+                                setIsAnalysisVisible(true);
+                                toast.success("Deep ATS Analysis updated!", { id: toastId });
+                              } else {
+                                await optimizeWithAI();
+                                setIsAnalysisVisible(true);
+                                toast.success("AI Analysis updated!", { id: toastId });
+                              }
+                            } catch (error: any) {
+                              toast.error("Analysis failed: " + error.message, { id: toastId });
+                            } finally {
+                              setIsAnalyzing(false);
+                            }
+                          }}
                         >
-                          Analyze ATS Match
+                          {isAnalyzing ? (
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="h-3 w-3 animate-spin" />
+                              Analyzing...
+                            </div>
+                          ) : (
+                            "Analyze ATS Match"
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -275,6 +344,7 @@ export default function Resume() {
                       <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => {
                         updateTargetJobRole("");
                         updateTargetJobDescription("");
+                        setIsAnalysisVisible(false);
                       }}>Change</Button>
                     </div>
 
@@ -353,7 +423,6 @@ export default function Resume() {
                       <Sparkles className="h-3 w-3" />
                       Refresh Analysis
                     </Button>
-
                   </div>
                 )}
               </motion.div>

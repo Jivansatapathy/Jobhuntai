@@ -1,5 +1,11 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Configure PDF.js worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version || '3.11.174'}/pdf.worker.min.js`;
+
 import { Resume, ATSAnalysis } from "../types/resume";
+import api from "@/services/api";
 
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
@@ -90,12 +96,12 @@ const RESUME_SCHEMA = {
     required: ["personalDetails", "summary", "skills", "experience"],
 };
 
-import api from "@/services/api";
-
-export const analyzeResumeATS = async (file: File): Promise<ATSAnalysis> => {
-    console.log("analyzeResumeATS: Starting analysis for file:", file.name);
+export const analyzeResumeATS = async (file: File, jobName: string = "", jobDescription: string = ""): Promise<ATSAnalysis> => {
+    console.log("analyzeResumeATS: Starting analysis for file:", file.name, "Role:", jobName);
     const formData = new FormData();
-    formData.append("resume", file);
+    formData.append("file", file);
+    formData.append("job_name", jobName);
+    formData.append("job_description", jobDescription);
 
     try {
         const response = await api.post("/api/resumes/ats/", formData, {
@@ -107,14 +113,12 @@ export const analyzeResumeATS = async (file: File): Promise<ATSAnalysis> => {
         console.log("analyzeResumeATS: API response received:", response.status);
         const data = response.data;
 
-
-
         // Map the external API response to our ATSAnalysis interface
         return {
-            score: data.score,
+            score: data.ats_score || 0,
             formattingScore: 100, // External API doesn't provide this, defaulting
-            matchingKeywords: data.keywords_matched || [],
-            missingKeywords: data.missing_keywords || [],
+            matchingKeywords: data.matched_skills || [],
+            missingKeywords: data.missing_skills || [],
             recommendations: data.suggestions || [],
             path90Plus: [],
             sectionFeedback: []
@@ -128,21 +132,66 @@ export const analyzeResumeATS = async (file: File): Promise<ATSAnalysis> => {
     }
 };
 
+const extractTextFromPDF = async (file: File): Promise<string> => {
+    const arrayBuffer = await file.arrayBuffer();
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdf = await loadingTask.promise;
+    let fullText = "";
+
+    for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(" ");
+        fullText += pageText + "\n";
+    }
+
+    return fullText;
+};
 
 export const parseResumeFromFile = async (file: File): Promise<Partial<Resume>> => {
-    const base64Data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const result = reader.result as string;
-            resolve(result.split(',')[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
+    console.log("parseResumeFromFile: Starting optimized parsing for:", file.name);
 
-    const response = await ai.models.generateContent({
-        model: "gemini-flash-latest",
-        contents: {
+    let resumeText = "";
+    if (file.type === "application/pdf") {
+        try {
+            resumeText = await extractTextFromPDF(file);
+        } catch (error) {
+            console.error("Local PDF extraction failed, falling back to Gemini OCR:", error);
+        }
+    }
+
+    let contents;
+    if (resumeText) {
+        contents = {
+            parts: [
+                {
+                    text: `You are a high-precision Resume Parser. Extract info from the following text into JSON.
+                    
+                    RESUME TEXT:
+                    ${resumeText}
+                    
+                    STRICT RULES:
+                    1. 'summary': brief intro only.
+                    2. 'experience': separate objects, bullet points.
+                    3. 'skills': technical skills.
+                    4. 'softSkills': interpersonal.
+                    5. 'projects': separate from work.
+                    6. 'education': schools/degrees.
+                    7. No invented info.`
+                }
+            ]
+        };
+    } else {
+        const base64Data = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve((reader.result as string).split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+
+        contents = {
             parts: [
                 {
                     inlineData: {
@@ -151,20 +200,15 @@ export const parseResumeFromFile = async (file: File): Promise<Partial<Resume>> 
                     },
                 },
                 {
-                    text: `You are a high-precision Resume Parser. Your goal is to extract information from the provided document into a structured JSON format.
-          
-          STRICT RULES FOR EXTRACTION:
-          1. 'summary': Extract ONLY the brief 2-4 sentence introduction/objective. DO NOT put skills, projects, or work history in this field.
-          2. 'experience': Each job must be a separate object. Descriptions MUST be an array of short bullet points.
-          3. 'skills': This is for Hard Skills (e.g., Python, React, AWS).
-          4. 'softSkills': This is for Interpersonal Skills (e.g., Leadership, Communication).
-          5. 'projects': Separate specific projects from general work experience.
-          6. 'education': List schools, degrees, and years.
-          7. If a section is not present in the document, return an empty array or empty string.
-          8. Do not make up information. Only extract what is visible.`,
+                    text: `You are a high-precision Resume Parser. Extract information from the provided document into a structured JSON format.`
                 }
             ]
-        },
+        };
+    }
+
+    const response = await ai.models.generateContent({
+        model: "gemini-1.5-flash-8b",
+        contents,
         config: {
             responseMimeType: "application/json",
             responseSchema: RESUME_SCHEMA,
