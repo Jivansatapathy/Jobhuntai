@@ -34,8 +34,6 @@ export default function Jobs() {
     const list = [...jobList];
     switch (criteria) {
       case "Most Recent":
-        // This is a simple mock sort since 'posted' is a string like '2 hours ago'
-        // In a real app, you'd use a timestamp
         return list.sort((a, b) => b.posted.localeCompare(a.posted));
       case "Highest Salary":
         const getSalaryValue = (s?: string) => {
@@ -170,7 +168,8 @@ export default function Jobs() {
               </div>
             </motion.div>
 
-            {/* Job Listings */}\n            <div className="space-y-4">
+            {/* Job Listings */}
+            <div className="space-y-4">
               {/* Job Cards */}
               {isRefreshing ? (
                 <div className="flex flex-col items-center justify-center py-20 space-y-4">
@@ -290,10 +289,5 @@ export default function Jobs() {
         </div>
       </main>
     </div>
-  );
-}
-        </div >
-      </main >
-    </div >
   );
 }
